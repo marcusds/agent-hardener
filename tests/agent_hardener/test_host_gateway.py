@@ -115,3 +115,17 @@ def test_normalize_rewrites_all_host_gateway_endpoints(monkeypatch: pytest.Monke
     assert all(ep["allowed_ips"] == ["192.168.5.2/32"] for ep in telemetry)
     # Non-gateway endpoints are untouched.
     assert policy["network_policies"]["relay_victim_egress"]["endpoints"][0]["allowed_ips"] == ["192.0.2.0/24"]
+
+
+def test_normalize_keeps_a_declared_backends_allowed_ips(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(host_gateway, "resolve_host_gateway_ips", lambda *_a, **_k: ("192.168.5.2",))
+    policy = {
+        "network_policies": {
+            "relay_victim_backends": {
+                "endpoints": [{"host": "host.docker.internal", "port": 8086, "allowed_ips": ["10.0.0.5/32"]}]
+            }
+        }
+    }
+    normalize_host_gateway_allowed_ips(policy)
+    [endpoint] = policy["network_policies"]["relay_victim_backends"]["endpoints"]
+    assert endpoint["allowed_ips"] == ["10.0.0.5/32", "192.168.5.2/32"]

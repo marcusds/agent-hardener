@@ -55,7 +55,7 @@ def test_without_backends_nothing_is_started(build_mission: BuildMission) -> Non
 
     harness.run()
 
-    assert "backend setup: starting host backends" not in harness.lines
+    assert "backend setup: starting backends" not in harness.lines
 
 
 @pytest.mark.usefixtures("relay_probe")
@@ -64,7 +64,7 @@ def test_backends_are_announced_and_their_build_output_goes_to_the_run_log(build
 
     harness.run()
 
-    assert "backend setup: starting host backends" in harness.lines
+    assert "backend setup: starting backends" in harness.lines
     assert "backends ready" in harness.lines
     assert "compose output" in harness.run_log
 
@@ -74,7 +74,7 @@ def test_a_backend_that_fails_to_start_surfaces_the_error_and_stops_the_run(buil
     harness = build_mission(backends=("db",), no_cleanup=True)
     harness.backends.up_result = _failed("port in use")
 
-    with pytest.raises(MissionError, match="host backend startup failed"):
+    with pytest.raises(MissionError, match="backend startup failed"):
         harness.run()
 
     assert "port in use" in harness.lines

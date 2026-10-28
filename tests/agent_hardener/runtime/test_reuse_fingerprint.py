@@ -68,9 +68,9 @@ def test_fingerprint_sidecar_roundtrip_and_mismatch(tmp_path: Path) -> None:
     fp = runner._agent_fingerprint(_session(wf), _openshell())
     path = agent_fingerprint_path(tmp_path, "agent-hardener-finance")
 
-    assert runner._read_sidecar(path) is None  # no sidecar yet → cannot verify → must rebuild
-    runner._write_sidecar(path, fp)
-    assert runner._read_sidecar(path) == fp  # matches → reuse is safe
+    assert runner._read_fingerprint(path) is None  # no sidecar yet → cannot verify → must rebuild
+    runner._write_fingerprint(path, fp)
+    assert runner._read_fingerprint(path) == fp  # matches → reuse is safe
 
     wf.write_text("agent: code-review\n", encoding="utf-8")  # swap the agent behind the same sandbox
-    assert runner._read_sidecar(path) != runner._agent_fingerprint(_session(wf), _openshell())
+    assert runner._read_fingerprint(path) != runner._agent_fingerprint(_session(wf), _openshell())

@@ -102,6 +102,11 @@ backends:
     compose_file: ../agents-lab/services/finance_backend/docker-compose.yaml
     health_url: http://127.0.0.1:8086/health
     ports: [8086]
+  # - name: ledger                      # a service that is not on this host: only the route is opened
+  #   host: ledger.ns.svc
+  #   ports: [8087]
+  #   allowed_ips: [10.96.0.0/12]       # private ranges OpenShell would otherwise block
+  #   health_url: http://ledger.ns.svc:8087/health
 ```
 
 The minimum a user must supply: `agent.project_dir` + `agent.workflow`, and `agent.secrets` (env-var

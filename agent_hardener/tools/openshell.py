@@ -130,11 +130,7 @@ def openshell_config(config: VictimControlConfig) -> OpenShellConfig:
 
 
 def with_victim_image(config: VictimControlConfig, image: str | None) -> VictimControlConfig:
-    """Point the sandbox at a pre-built victim image instead of building the staged context locally.
-
-    The image must be built from the context ``agent-hardener stage`` writes: staging injects the Relay
-    shim, the guardrail plugin and the agent env, and the launch command still assumes them.
-    """
+    """Point the sandbox at a pre-built victim image (one built from the ``agent-hardener stage`` context)."""
     if image is None:
         return config
     return config.model_copy(update={"config": {**config.config, "image": image}})
@@ -336,7 +332,7 @@ def managed_victim_sandbox(
     docker build plus the whole benign interview first.
     """
     openshell = openshell_config(config)
-    reused = reuse and sandbox_is_ready(openshell)
+    reused = reuse and sandbox_is_ready(openshell) and OpenShellLifecycle(openshell).runs_configured_image()
     prepared = prepare_relay_victim(openshell)
     if not reused:
         result = OpenShellLifecycle(prepared).up()

@@ -80,16 +80,16 @@ class BackendManager:
         return OpenShellCommandResult.from_completed(args, self.runner.run(args, cwd=cwd))
 
     def up(self, specs: list[BackendServiceSpec], cwd: Path) -> OpenShellCommandResult:
-        """Start each backend stack with a compose_file and wait for its health endpoint."""
+        """Start each backend stack with a compose_file; wait for every health endpoint, compose-managed or not."""
         results: list[OpenShellCommandResult] = []
         for spec in specs:
-            if spec.compose_file is None:
-                continue
-            base, project_dir = self._compose_args(spec, cwd)
-            result = self._run([*base, "up", "-d", "--build"], project_dir)
-            results.append(result)
-            if not result.ok:
-                return combine_results(results, ok=False)
+            base: list[str] = []
+            if spec.compose_file is not None:
+                base, project_dir = self._compose_args(spec, cwd)
+                result = self._run([*base, "up", "-d", "--build"], project_dir)
+                results.append(result)
+                if not result.ok:
+                    return combine_results(results, ok=False)
             if spec.health_url:
                 try:
                     wait_for_http_health(spec.health_url, timeout_seconds=120.0)

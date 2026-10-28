@@ -20,6 +20,9 @@ import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 from agent_hardener.errors import VictimBuildError
 
 #: The guardrail package as it is named *inside the victim*. Copied in rather than pip-installed:
@@ -32,10 +35,9 @@ _PLUGIN_SOURCE = Path(__file__).resolve().parent.parent / "relay_plugin"
 if TYPE_CHECKING:
     from agent_hardener.models import RelayVictimSpec
 
-# Excluded when copying the project into the staged build context (avoids huge/irrelevant trees).
-# Dotenv files hold the agent's secrets, which reach the sandbox via the OpenShell provider instead; the
-# staged context may be uploaded and built elsewhere (see ``agent-hardener stage``).
-_COPY_IGNORE = shutil.ignore_patterns(".git", ".venv", "__pycache__", "*.pyc", ".agent-hardener", ".env", ".env.*")
+# Kept out of the staged build context, which may be uploaded and built elsewhere (``agent-hardener stage``).
+# ``.env`` is the secrets convention; secrets reach the sandbox via the OpenShell provider, never the image.
+STAGED_CONTEXT_EXCLUDES = (".git", ".venv", "__pycache__", "*.pyc", ".agent-hardener", ".env")
 
 # System-policy layer Relay discovers plugin config from. Agent Hardener uploads the guardrails the
 # defenders produce here; the user/project layers are deliberately not used, because NeMo Fabric
@@ -241,10 +243,11 @@ def stage_relay_victim_build(spec: RelayVictimSpec, cwd: Path, build_root: Path)
     project_dir = project_dir.resolve()
     if not project_dir.is_dir():
         raise VictimBuildError(f"relay_victim.project_dir does not exist: {project_dir}")
+    secrets_file = _resolve_secrets_file(spec, cwd)
 
     if build_root.exists():
         shutil.rmtree(build_root)
-    shutil.copytree(project_dir, build_root, ignore=_COPY_IGNORE, symlinks=True)
+    shutil.copytree(project_dir, build_root, ignore=_staging_ignore(secrets_file), symlinks=True)
 
     staged_dockerfile = build_root / "Dockerfile"
     user_dockerfile = spec.dockerfile if spec.dockerfile.is_absolute() else project_dir / spec.dockerfile
@@ -258,5 +261,39 @@ def stage_relay_victim_build(spec: RelayVictimSpec, cwd: Path, build_root: Path)
     if spec.harness == "hermes":
         _inject_hermes_wiring(staged_dockerfile)
 
-    (build_root / ".dockerignore").write_text(".git\n.venv\n__pycache__\n*.pyc\n.env\n.env.*\n", encoding="utf-8")
+    _append_dockerignore(build_root, project_dir, secrets_file)
     return staged_dockerfile
+
+
+def _resolve_secrets_file(spec: RelayVictimSpec, cwd: Path) -> Path | None:
+    if spec.secrets_file is None:
+        return None
+    secrets_file = spec.secrets_file if spec.secrets_file.is_absolute() else cwd / spec.secrets_file
+    return secrets_file.resolve()
+
+
+def _staging_ignore(secrets_file: Path | None) -> Callable[[str, list[str]], set[str]]:
+    by_pattern = shutil.ignore_patterns(*STAGED_CONTEXT_EXCLUDES)
+
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        ignored = set(by_pattern(directory, names))
+        if secrets_file is not None and secrets_file.parent == Path(directory).resolve():
+            ignored.add(secrets_file.name)
+        return ignored
+
+    return ignore
+
+
+def _append_dockerignore(build_root: Path, project_dir: Path, secrets_file: Path | None) -> None:
+    """Extend the project's own ``.dockerignore`` (copied in, if any) rather than replace it."""
+    entries = list(STAGED_CONTEXT_EXCLUDES)
+    if secrets_file is not None and secrets_file.is_relative_to(project_dir):
+        entries.append(secrets_file.relative_to(project_dir).as_posix())
+    dockerignore = build_root / ".dockerignore"
+    existing = dockerignore.read_text(encoding="utf-8") if dockerignore.is_file() else ""
+    present = {line.strip() for line in existing.splitlines()}
+    missing = [entry for entry in entries if entry not in present]
+    if not missing:
+        return
+    separator = "" if not existing or existing.endswith("\n") else "\n"
+    dockerignore.write_text(existing + separator + "\n".join(missing) + "\n", encoding="utf-8")

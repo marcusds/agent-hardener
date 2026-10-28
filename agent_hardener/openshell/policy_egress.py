@@ -28,7 +28,7 @@ RELAY_VICTIM_DISCOVERED_EGRESS_KEY = "relay_victim_discovered_egress"
 
 
 def normalize_host_gateway_allowed_ips(policy: dict) -> dict:
-    """Set ``allowed_ips`` on every ``host.docker.internal`` endpoint to this daemon's bridge IP.
+    """Point every ``host.docker.internal`` endpoint's ``allowed_ips`` at this daemon's bridge IP.
 
     Templates carry a driver-specific default (``172.17.0.1``, correct for Docker Desktop / Linux).
     This rewrites it — across the telemetry, backend, and discovered-egress blocks alike — to
@@ -37,14 +37,16 @@ def normalize_host_gateway_allowed_ips(policy: dict) -> dict:
     returns ``policy``. A no-op when the resolved IP already matches.
     """
     allowed_ips: list[str] | None = None  # resolved lazily — probes Docker only if a match exists
-    for block in (policy.get("network_policies") or {}).values():
+    for key, block in (policy.get("network_policies") or {}).items():
         if not isinstance(block, dict):
             continue
         for endpoint in block.get("endpoints", []) or []:
             if isinstance(endpoint, dict) and endpoint.get("host") == HOST_GATEWAY_ALIAS:
                 if allowed_ips is None:
                     allowed_ips = host_gateway_allowed_ips()
-                endpoint["allowed_ips"] = list(allowed_ips)
+                # A declared backend's allowed_ips are the user's; templates carry a default to replace.
+                declared = list(endpoint.get("allowed_ips") or []) if key == RELAY_VICTIM_BACKENDS_KEY else []
+                endpoint["allowed_ips"] = declared + [ip for ip in allowed_ips if ip not in declared]
     return policy
 
 

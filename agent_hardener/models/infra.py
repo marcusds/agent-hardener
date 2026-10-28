@@ -21,10 +21,10 @@ class VictimControlConfig(AgentHardenerModel):
 
 
 class BackendEndpoint(AgentHardenerModel):
-    """A single host endpoint the sandboxed agent is allowed to reach.
+    """A single endpoint the sandboxed agent is allowed to reach.
 
-    Backends run on the host (outside OpenShell); the agent reaches them via
-    ``host.docker.internal``. These entries are injected into the sandbox network policy.
+    Backends run on the host by default, reached via ``host.docker.internal``; ``host`` points at one
+    running elsewhere. These entries are injected into the sandbox network policy.
     """
 
     host: str = "host.docker.internal"
@@ -67,6 +67,8 @@ class RelayVictimSpec(AgentHardenerModel):
     victim_port: int = Field(default=8000, gt=0, le=65535)
     victim_binaries: list[str] = Field(min_length=1)
     agent_env: dict[str, str] = Field(default_factory=dict)
+    #: The dotenv file the OpenShell provider reads; never copied into the staged build context.
+    secrets_file: Path | None = None
     backends: list[BackendServiceSpec] = Field(default_factory=list)
     egress: list[str] = Field(default_factory=list)
     discover_egress: bool = True

@@ -17,6 +17,7 @@ import pytest
 from agent_hardener.openshell.lifecycle import OpenShellCommandResult
 from agent_hardener.runtime import runner
 from agent_hardener.runtime.runner import Mission, MissionResult
+from agent_hardener.swarm_tracker import write_victim_image
 
 
 def command_result(output: str = "", *, ok: bool = True) -> OpenShellCommandResult:
@@ -54,6 +55,8 @@ class FakeLifecycle:
 
     def up(self, _policy: object) -> OpenShellCommandResult:
         self.calls.append("up")
+        if self.up_result.ok:
+            write_victim_image(self.config.cwd, self.config.sandbox, self.config.image)
         return self.up_result
 
     def collect_victim_diagnostics(self) -> OpenShellCommandResult:

@@ -40,6 +40,7 @@ from agent_hardener.openshell.support import (
     read_env_file,
 )
 from agent_hardener.relay_plugin.config import judge_credentials
+from agent_hardener.swarm_tracker.layout import read_victim_image, write_victim_image
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -95,7 +96,11 @@ class OpenShellLifecycle(PollingMixin, VictimMixin, ForwardMixin):
         )
 
     def up(self, policy_path: Path | None = None) -> OpenShellCommandResult:
-        """Create the sandbox when a build context is configured."""
+        """Create the sandbox when a build context or a pre-built image is configured.
+
+        An existing sandbox is kept, unless it was created from a different pre-built image than the one now
+        configured: then it is replaced, since nothing else would ever switch it.
+        """
         effective_policy_path = policy_path or self.config.policy_path
         results = self._ensure_gateway_started()
         if not results[-1].ok:
@@ -105,6 +110,13 @@ class OpenShellLifecycle(PollingMixin, VictimMixin, ForwardMixin):
         results.append(sandbox_status)
         if self.config.build_context is None and self.config.image is None:
             return combine_results(results, ok=results[-1].ok)
+
+        if sandbox_status.ok and not self.runs_configured_image():
+            logger.info("sandbox setup: replacing sandbox=%s, created from another image", self.config.sandbox)
+            results.append(self.down())
+            if not results[-1].ok:
+                return combine_results(results)
+            sandbox_status = OpenShellCommandResult(ok=False, command=[], output="replaced")
 
         if not sandbox_status.ok:
             if is_transient_transport_failure(sandbox_status.output):
@@ -122,10 +134,20 @@ class OpenShellLifecycle(PollingMixin, VictimMixin, ForwardMixin):
         # The gateway is a system service (brew/systemd); all that can be done here is confirm it answers.
         return [self._exec.run(["gateway", "info", "--gateway", self.config.gateway])]
 
+    def runs_configured_image(self) -> bool:
+        """False only when a pre-built image is configured and the sandbox was recorded as created from another."""
+        if self.config.image is None:
+            return True
+        return read_victim_image(self._builds_cwd(), self.config.sandbox) == self.config.image
+
+    def _builds_cwd(self) -> Path:
+        return self.config.cwd or Path.cwd()
+
     def _create_sandbox(self, effective_policy_path: Path) -> list[OpenShellCommandResult]:
         build = self._build_image()
         if not build.ok:
             return [build]
+        write_victim_image(self._builds_cwd(), self.config.sandbox, self.config.image)
         args = self._sandbox_create_args(effective_policy_path, image=build.output.strip())
         logger.info(
             "sandbox create command sandbox=%s command=%s",

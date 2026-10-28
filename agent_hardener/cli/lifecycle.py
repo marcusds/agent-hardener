@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import typer
 
-from agent_hardener.cli._app import DEFAULT_ENV_FILE, DEFAULT_MANIFEST, VICTIM_IMAGE_HELP, app
+from agent_hardener.cli._app import DEFAULT_ENV_FILE, DEFAULT_MANIFEST, VICTIM_IMAGE_OPTION, app
 from agent_hardener.cli._errors import cli_error_boundary
 from agent_hardener.display.console import emit, status_factory
 from agent_hardener.errors import SandboxProvisioningError, VictimBuildError
@@ -47,7 +47,7 @@ def _simple_lifecycle(config: Path, verb: str) -> None:
 def up(
     config: Path = typer.Option(DEFAULT_MANIFEST, "--config", "-c"),
     env_file: Path = typer.Option(DEFAULT_ENV_FILE, "--env-file"),
-    victim_image: str | None = typer.Option(None, "--victim-image", help=VICTIM_IMAGE_HELP),
+    victim_image: str | None = VICTIM_IMAGE_OPTION,
 ) -> None:
     """Build and start the OpenShell sandbox for the configured agent."""
     from agent_hardener.config import load_config

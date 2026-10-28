@@ -12,7 +12,7 @@ import click
 import typer
 from typer.core import TyperCommand
 
-from agent_hardener.cli._app import DEFAULT_ENV_FILE, DEFAULT_MANIFEST, VICTIM_IMAGE_HELP, app
+from agent_hardener.cli._app import DEFAULT_ENV_FILE, DEFAULT_MANIFEST, VICTIM_IMAGE_OPTION, app
 from agent_hardener.display.console import fail, info, ok
 
 if TYPE_CHECKING:
@@ -147,7 +147,7 @@ def run(
         help="Initial OpenShell policy YAML to run from, overriding the default permissive policy. Backend "
         "and discovered-egress rules are still layered on top; defenders still harden it further.",
     ),
-    victim_image: str | None = typer.Option(None, "--victim-image", help=VICTIM_IMAGE_HELP),
+    victim_image: str | None = VICTIM_IMAGE_OPTION,
 ) -> None:
     """Run the full attack/defend/validate cycle against the configured agent.
 
@@ -179,7 +179,6 @@ def run(
         session_config = _resolve_replay(replay, session_config)
         session_config = _apply_benign_suite(benign_suite, session_config)
         if victim_image is not None:
-            info(f"Using pre-built victim image: {victim_image}")
             session_config = session_config.model_copy(
                 update={"victim_control": with_victim_image(session_config.victim_control, victim_image)}
             )

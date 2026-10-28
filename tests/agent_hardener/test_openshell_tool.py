@@ -324,7 +324,9 @@ def test_verification_probes_the_victim_and_pulls_the_atof_log(
 class _Sandbox:
     """Fake lifecycle + collaborators for managed_victim_sandbox; records the order things happen in."""
 
-    def __init__(self, monkeypatch: pytest.MonkeyPatch, *, ready: bool = False, up_ok: bool = True) -> None:
+    def __init__(
+        self, monkeypatch: pytest.MonkeyPatch, *, ready: bool = False, up_ok: bool = True, same_image: bool = True
+    ) -> None:
         self.events: list[str] = []
         self.verify_error: Exception | None = None
         outer = self
@@ -332,6 +334,10 @@ class _Sandbox:
         class Lifecycle:
             def __init__(self, config: str) -> None:
                 self.config = config
+
+            def runs_configured_image(self) -> bool:
+                outer.events.append(f"image?:{self.config}")
+                return same_image
 
             def up(self) -> OpenShellCommandResult:
                 outer.events.append(f"up:{self.config}")
@@ -375,7 +381,17 @@ def test_a_ready_sandbox_is_reused_and_left_running(monkeypatch: pytest.MonkeyPa
     with sandbox.enter(reuse=True, no_cleanup=False):
         pass
 
-    assert sandbox.events == ["ready?:base", "verify:prepared-base:None"]
+    assert sandbox.events == ["ready?:base", "image?:base", "verify:prepared-base:None"]
+
+
+def test_reuse_replaces_a_ready_sandbox_created_from_another_image(monkeypatch: pytest.MonkeyPatch) -> None:
+    sandbox = _Sandbox(monkeypatch, ready=True, same_image=False)
+
+    with sandbox.enter(reuse=True, no_cleanup=False):
+        pass
+
+    assert sandbox.events[:3] == ["ready?:base", "image?:base", "up:prepared-base"]
+    assert sandbox.events[-1] == "down:base"
 
 
 def test_reuse_falls_back_to_a_build_when_the_sandbox_is_not_ready(monkeypatch: pytest.MonkeyPatch) -> None:

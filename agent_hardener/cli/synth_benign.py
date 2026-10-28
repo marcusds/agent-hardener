@@ -9,7 +9,7 @@ from pathlib import Path
 
 import typer
 
-from agent_hardener.cli._app import DEFAULT_ENV_FILE, DEFAULT_MANIFEST, VICTIM_IMAGE_HELP, app
+from agent_hardener.cli._app import DEFAULT_ENV_FILE, DEFAULT_MANIFEST, VICTIM_IMAGE_OPTION, app
 from agent_hardener.display.console import fail, info, section, status_factory
 from agent_hardener.display.interview import auto_answer_provider, tty_answer_provider
 
@@ -37,7 +37,7 @@ def synth_benign(
         False, "--reuse", help="Reuse the running sandbox if it's already Ready (skip rebuild)."
     ),
     no_cleanup: bool = typer.Option(False, "--no-cleanup", help="Leave the sandbox running after synthesis."),
-    victim_image: str | None = typer.Option(None, "--victim-image", help=VICTIM_IMAGE_HELP),
+    victim_image: str | None = VICTIM_IMAGE_OPTION,
 ) -> None:
     """Bring up the victim sandbox, synthesize the smart benign profile + request suite, then tear it down.
 

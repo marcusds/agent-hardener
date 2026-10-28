@@ -62,7 +62,6 @@ def _run_log_path(root_dir: Path) -> Path:
 
 
 def _base_config(relay_victim: object = None) -> SimpleNamespace:
-    # Includes the fields the loop-1 agent fingerprint reads (sandbox/start_command/build_context/image).
     return SimpleNamespace(
         relay_victim=relay_victim,
         cwd=None,

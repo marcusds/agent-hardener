@@ -55,8 +55,8 @@ from agent_hardener.swarm_tracker import (
     OPENSHELL_LOGS,
     RunLayout,
     agent_fingerprint_path,
+    read_victim_image,
     victim_active_state_dir,
-    victim_image_path,
 )
 from agent_hardener.tools.openshell import (
     openshell_config,
@@ -139,19 +139,16 @@ def _agent_fingerprint(session_config: SessionConfig, openshell_config: OpenShel
     return h.hexdigest()[:16]
 
 
-def _read_sidecar(path: Path) -> str | None:
+def _read_fingerprint(path: Path) -> str | None:
     try:
-        return path.read_text(encoding="utf-8").strip() or None
+        return path.read_text(encoding="utf-8").strip()
     except OSError:
         return None
 
 
-def _write_sidecar(path: Path, value: str | None) -> None:
-    if value is None:
-        path.unlink(missing_ok=True)
-        return
+def _write_fingerprint(path: Path, fingerprint: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(value + "\n", encoding="utf-8")
+    path.write_text(fingerprint + "\n", encoding="utf-8")
 
 
 @dataclass
@@ -257,7 +254,7 @@ class Mission:
         """
         if self._base_config.image is not None:
             return None
-        return _read_sidecar(victim_image_path(self._base_config.cwd or Path.cwd(), self._base_config.sandbox))
+        return read_victim_image(self._base_config.cwd or Path.cwd(), self._base_config.sandbox)
 
     def _open_sinks(self, sinks: contextlib.ExitStack) -> None:
         """Wire the per-run agent-hardener.log capture and the multicast structured-event bus onto *sinks*."""
@@ -298,14 +295,14 @@ class Mission:
     # --- phases ---
 
     def _start_backends(self) -> None:
-        """Start any host-side backends the victim's tools call."""
+        """Start the compose-managed backends the victim's tools call and wait for every backend's health."""
         if not self._backend_manager:
             return
-        self._announce("backend setup: starting host backends")
+        self._announce("backend setup: starting backends")
         backend_up = self._backend_manager.up(self._backend_specs, self._backend_cwd)
         if not backend_up.ok:
             self._announce(backend_up.output)  # real error: surface even when quiet
-            raise MissionError("host backend startup failed")
+            raise MissionError("backend startup failed")
         self._detail(backend_up.output)
         self._announce("backends ready")
 
@@ -313,14 +310,13 @@ class Mission:
         """Stand the victim up once at the baseline: build/reuse the sandbox and gate health (synth is separate)."""
         cfg, base_config = self.ctx.session_config, self._base_config
         # --reuse only sets skip_initial_up, which matches by sandbox NAME. Gate reuse on an agent
-        # fingerprint (workflow + start command + build context) so a different agent under the same name
-        # forces a rebuild instead of probing the wrong victim.
+        # fingerprint (workflow + start command + build context + image) so a different agent under the same
+        # name forces a rebuild instead of probing the wrong victim.
         fp = _agent_fingerprint(cfg, base_config)
-        builds_cwd = base_config.cwd or Path.cwd()
-        fp_path = agent_fingerprint_path(builds_cwd, base_config.sandbox)
+        fp_path = agent_fingerprint_path(base_config.cwd or Path.cwd(), base_config.sandbox)
         if self._adopted_image:
             self._announce(f"reusing the pre-built victim image recorded for this sandbox: {self._adopted_image}")
-        reuse_ok = self.ctx.skip_initial_up and _read_sidecar(fp_path) == fp
+        reuse_ok = self.ctx.skip_initial_up and _read_fingerprint(fp_path) == fp
         if self.ctx.skip_initial_up and not reuse_ok:
             self._announce(
                 "running sandbox does not match the configured agent (fingerprint mismatch or "
@@ -336,8 +332,7 @@ class Mission:
             self._detail(result.output)
             self._announce("sandbox ready")
             self._announce(f"  → full build/infra output: {self._log_path}")
-            _write_sidecar(fp_path, fp)
-            _write_sidecar(victim_image_path(builds_cwd, base_config.sandbox), base_config.image)
+            _write_fingerprint(fp_path, fp)
         else:
             self._announce("reusing sandbox (agent fingerprint matches)")
         # Ensure the victim is serving before synth probes it (wait_for_health is idempotent).

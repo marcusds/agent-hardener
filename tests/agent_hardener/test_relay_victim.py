@@ -123,17 +123,50 @@ def test_stage_copies_project_dockerfile_and_injects_shim(tmp_path: Path) -> Non
     assert 'kw.setdefault("trust_env", True)' in shim
 
 
-def test_stage_leaves_dotenv_secrets_out_of_the_build_context(tmp_path: Path) -> None:
+def test_stage_leaves_dotenv_and_the_secrets_file_out_of_the_build_context(tmp_path: Path) -> None:
     project = _make_project(tmp_path)
     (project / ".env").write_text("INFERENCE_API_KEY=secret\n", encoding="utf-8")
-    (project / ".env.local").write_text("GITHUB_TOKEN=secret\n", encoding="utf-8")
-    spec = RelayVictimSpec(project_dir=project, dockerfile="Dockerfile.byo", victim_binaries=["/app/.venv/bin/**"])
+    (project / "config").mkdir()
+    (project / "config" / "prod.env").write_text("GITHUB_TOKEN=secret\n", encoding="utf-8")
+    (project / ".env.example").write_text("INFERENCE_API_KEY=\n", encoding="utf-8")
+    spec = RelayVictimSpec(
+        project_dir=project,
+        dockerfile="Dockerfile.byo",
+        victim_binaries=["/app/.venv/bin/**"],
+        secrets_file=project / "config" / "prod.env",
+    )
     build = tmp_path / "build"
     stage_relay_victim_build(spec, tmp_path, build)
 
     assert not (build / ".env").exists()
-    assert not (build / ".env.local").exists()
-    assert ".env\n" in (build / ".dockerignore").read_text(encoding="utf-8")
+    assert not (build / "config" / "prod.env").exists()
+    assert (build / ".env.example").is_file()
+    dockerignore = (build / ".dockerignore").read_text(encoding="utf-8").splitlines()
+    assert ".env" in dockerignore
+    assert "config/prod.env" in dockerignore
+
+
+def test_stage_extends_the_projects_dockerignore_instead_of_replacing_it(tmp_path: Path) -> None:
+    project = _make_project(tmp_path)
+    (project / ".dockerignore").write_text("*.pem\nsecrets/\n.git", encoding="utf-8")
+    spec = RelayVictimSpec(project_dir=project, dockerfile="Dockerfile.byo", victim_binaries=["/app/.venv/bin/**"])
+    stage_relay_victim_build(spec, tmp_path, tmp_path / "build")
+
+    lines = (tmp_path / "build" / ".dockerignore").read_text(encoding="utf-8").splitlines()
+    assert lines[:3] == ["*.pem", "secrets/", ".git"]
+    assert lines.count(".git") == 1
+    assert {".venv", "__pycache__", "*.pyc", ".agent-hardener", ".env"} <= set(lines)
+
+
+def test_stage_ignores_a_secrets_file_outside_the_project(tmp_path: Path) -> None:
+    project = _make_project(tmp_path)
+    spec = RelayVictimSpec(
+        project_dir=project, dockerfile="Dockerfile.byo", victim_binaries=["/app/.venv/bin/**"], secrets_file=".env"
+    )
+    (tmp_path / ".env").write_text("INFERENCE_API_KEY=secret\n", encoding="utf-8")
+    stage_relay_victim_build(spec, tmp_path, tmp_path / "build")
+
+    assert ".env" in (tmp_path / "build" / ".dockerignore").read_text(encoding="utf-8").splitlines()
 
 
 def test_stage_ships_the_guardrail_plugin_into_the_image(tmp_path: Path) -> None:
@@ -695,3 +728,20 @@ def test_bind_provider_credentials_binds_only_inspected_endpoints() -> None:
     bind_provider_credentials(policy, "secrets")
 
     assert [e.get("credential_binding") for e in endpoints] == [{"provider": "secrets"}, None, None, None]
+
+
+def test_backend_manager_health_gates_a_backend_it_does_not_start(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[str, float]] = []
+    monkeypatch.setattr(
+        "agent_hardener.providers.backends.wait_for_http_health",
+        lambda url, timeout_seconds: calls.append((url, timeout_seconds)),
+    )
+    runner = RecordingRunner()
+    manager = BackendManager(runner=runner, compose_command=["docker", "compose"])
+    spec = BackendServiceSpec(name="finance", health_url="http://finance.ns.svc:8086/health")
+
+    assert manager.up([spec], tmp_path).ok
+    assert runner.commands == []
+    assert calls == [("http://finance.ns.svc:8086/health", 120.0)]

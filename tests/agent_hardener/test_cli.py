@@ -108,8 +108,18 @@ def test_run_victim_image_reaches_the_sandbox_config(tmp_path: Path, monkeypatch
     result = runner.invoke(app, ["run", "--victim-image", "registry.example.com/agent:1"])
 
     assert result.exit_code == 0
+    assert "Using pre-built victim image: registry.example.com/agent:1" in result.output
     (config,) = captured
     assert config.victim_control.config == {"sandbox": "sb", "image": "registry.example.com/agent:1"}
+
+
+@pytest.mark.parametrize("command", ["run", "up", "synth-benign"])
+@pytest.mark.parametrize("value", ["", "   "])
+def test_a_blank_victim_image_is_rejected_before_anything_runs(command: str, value: str) -> None:
+    result = runner.invoke(app, [command, "--victim-image", value])
+
+    assert result.exit_code == 2
+    assert "name an image reference" in result.output
 
 
 def test_run_replay_fails_without_hitlog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1045,6 +1055,30 @@ def test_up_command(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("agent_hardener.openshell.lifecycle.OpenShellLifecycle", FakeLifecycle)
     result = runner.invoke(app, ["up", "--config", "x.yaml"])
     assert result.exit_code == 0
+
+
+def test_up_victim_image_reaches_the_sandbox_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_common(monkeypatch, base_config="cfg")
+    seen: list[object] = []
+    monkeypatch.setattr("agent_hardener.tools.openshell.openshell_config", lambda vc: seen.append(vc) or "cfg")
+    monkeypatch.setattr(
+        "agent_hardener.config.load_config",
+        lambda _p: SimpleNamespace(victim_control=VictimControlConfig(type="openshell", config={"sandbox": "sb"})),
+    )
+
+    class FakeLifecycle:
+        def __init__(self, _cfg: object) -> None:
+            pass
+
+        def up(self) -> OpenShellCommandResult:
+            return _ok("brought-up")
+
+    monkeypatch.setattr("agent_hardener.openshell.lifecycle.OpenShellLifecycle", FakeLifecycle)
+    result = runner.invoke(app, ["up", "--victim-image", "reg/agent:1"])
+
+    assert result.exit_code == 0
+    (victim_control,) = seen
+    assert victim_control.config == {"sandbox": "sb", "image": "reg/agent:1"}
     assert "brought-up" in result.output
 
 
@@ -1074,6 +1108,9 @@ def _patch_synth(monkeypatch: pytest.MonkeyPatch, events: list[str], *, up_ok: b
         def __init__(self, _cfg: object) -> None:
             pass
 
+        def runs_configured_image(self) -> bool:
+            return True
+
         def up(self) -> OpenShellCommandResult:
             events.append("up")
             return _ok("brought-up") if up_ok else OpenShellCommandResult(ok=False, command=[], output="build failed")
@@ -1095,6 +1132,25 @@ def test_synth_benign_manages_sandbox_lifecycle(monkeypatch: pytest.MonkeyPatch)
     result = runner.invoke(app, ["synth-benign", "--config", "x.yaml"])
     assert result.exit_code == 0
     assert events == ["up", "synth", "down"]  # builds, synthesizes, tears down
+
+
+def test_synth_benign_victim_image_reaches_the_sandbox_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[str] = []
+    _patch_synth(monkeypatch, events)
+    seen: list[object] = []
+    monkeypatch.setattr("agent_hardener.tools.openshell.openshell_config", lambda vc: seen.append(vc) or "cfg")
+    monkeypatch.setattr(
+        "agent_hardener.config.load_config",
+        lambda _p: SimpleNamespace(
+            victim_control=VictimControlConfig(type="openshell", config={"sandbox": "sb"}),
+            target=SimpleNamespace(base_url=None),
+        ),
+    )
+
+    result = runner.invoke(app, ["synth-benign", "--victim-image", "reg/agent:1"])
+
+    assert result.exit_code == 0
+    assert seen[0].config == {"sandbox": "sb", "image": "reg/agent:1"}
 
 
 def test_synth_benign_reuse_skips_build_and_teardown(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml  # type: ignore[import-untyped]
-from pydantic import Field
+from pydantic import Field, field_validator, model_validator
 
 from agent_hardener.config import parse_config_data
 from agent_hardener.models import AgentHardenerModel, DefenderSettings, GarakSettings, RelayVictimSpec, SessionConfig
@@ -51,6 +51,24 @@ class BackendManifest(AgentHardenerModel):
     host: str | None = None
     # OpenShell blocks private addresses (e.g. a cluster service IP) unless they are listed here.
     allowed_ips: list[str] = Field(default_factory=list)
+
+    @field_validator("host")
+    @classmethod
+    def _bare_hostname(cls, value: str | None) -> str | None:
+        host = (value or "").strip()
+        if not host:
+            return None
+        if "://" in host or "/" in host or ":" in host:
+            raise ValueError(f"backend host must be a bare hostname or IP, not {host!r}; put the port in ports")
+        return host
+
+    @model_validator(mode="after")
+    def _route_needs_ports(self) -> BackendManifest:
+        if (self.host or self.allowed_ips) and not self.ports:
+            raise ValueError(f"backend '{self.name}' sets host/allowed_ips but no ports, so nothing would be opened")
+        if self.host and self.compose_file:
+            raise ValueError(f"backend '{self.name}' sets both host and compose_file; compose starts it on this host")
+        return self
 
 
 class AgentSpec(AgentHardenerModel):
@@ -128,6 +146,7 @@ def _relay_victim_block(agent: AgentSpec, backends: list[BackendManifest]) -> di
         "victim_binaries": agent.binaries,
         "relay_artifacts": agent.relay_artifacts,
         "agent_env": agent.env,
+        "secrets_file": agent.secrets_file,
         "backends": backend_specs,
         "egress": agent.egress,
         "discover_egress": agent.discover_egress,
@@ -469,6 +488,8 @@ def render_manifest_yaml(manifest: dict) -> str:
             "#   ports: [8086]\n"
             "#   health_url: http://127.0.0.1:8086/health  # optional\n"
             "#   compose_project: my-project               # optional\n"
+            "#   host: my-service.ns.svc                   # optional: reach a service that is not on this host\n"
+            "#   allowed_ips: [10.96.0.0/12]               # optional: private ranges OpenShell may otherwise block\n"
         )
         base = base.replace("backends: []\n", "backends: []\n" + backend_stubs, 1)
 

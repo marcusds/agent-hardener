@@ -144,6 +144,24 @@ def victim_image_path(cwd: Path, sandbox: str) -> Path:
     return cwd / _AGENT_HARDENER / _BUILDS / sandbox / "victim_image.txt"
 
 
+def read_victim_image(cwd: Path, sandbox: str) -> str | None:
+    """The pre-built image ``sandbox`` was created from, or None after a local build or when unknown."""
+    try:
+        return victim_image_path(cwd, sandbox).read_text(encoding="utf-8").strip() or None
+    except OSError:
+        return None
+
+
+def write_victim_image(cwd: Path, sandbox: str, image: str | None) -> None:
+    """Record (or, for a locally built sandbox, forget) the pre-built image ``sandbox`` was created from."""
+    path = victim_image_path(cwd, sandbox)
+    if image is None:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(image + "\n", encoding="utf-8")
+
+
 def benign_profiles_dir(root_dir: Path, target: str) -> Path:
     """The per-target synth cache dir ``<root_dir>/benign_profiles/<target>`` (not created here)."""
     return root_dir / _BENIGN_PROFILES / target

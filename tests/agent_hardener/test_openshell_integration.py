@@ -25,6 +25,7 @@ from agent_hardener.openshell.lifecycle import (
     read_env_file,
 )
 from agent_hardener.runtime.adapters import _policy_digest
+from agent_hardener.swarm_tracker import read_victim_image, write_victim_image
 from agent_hardener.tools.openshell import main as openshell_tool_main
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -521,26 +522,92 @@ def test_lifecycle_passes_an_image_reference_build_context_through(tmp_path: Pat
     assert lifecycle._build_image().output == "registry.example.com/team/agent:1"
 
 
-def test_lifecycle_creates_from_victim_image_without_a_local_build(tmp_path: Path) -> None:
-    runner = SequenceRunner([(0, "gateway ok"), (1, "sandbox missing"), (0, "sandbox created"), (0, "Phase: Ready")])
-    lifecycle = OpenShellLifecycle(
+def _image_lifecycle(
+    tmp_path: Path, runner: SequenceRunner, *, image: str, with_context: bool = True
+) -> OpenShellLifecycle:
+    if with_context:
+        (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    return OpenShellLifecycle(
         OpenShellConfig.from_mapping(
             {
                 "gateway": "gw",
                 "sandbox": "sb",
                 "policy_path": str(tmp_path / "policy.yaml"),
-                "build_context": str(tmp_path / "Dockerfile"),
-                "image": "registry.example.com/team/agent:1",
+                "build_context": str(tmp_path / "Dockerfile") if with_context else None,
+                "image": image,
+                "cwd": str(tmp_path),
             }
         ),
         runner=runner,
     )
+
+
+@pytest.mark.parametrize("with_context", [True, False], ids=["staged-context-present", "image-only"])
+def test_lifecycle_creates_from_victim_image_without_a_local_build(tmp_path: Path, with_context: bool) -> None:
+    runner = SequenceRunner([(0, "gateway ok"), (1, "sandbox missing"), (0, "sandbox created"), (0, "Phase: Ready")])
+    lifecycle = _image_lifecycle(tmp_path, runner, image="registry.example.com/team/agent:1", with_context=with_context)
 
     assert lifecycle.up().ok is True
 
     assert not any(cmd[0] == "docker" for cmd in runner.commands)
     create_command = runner.commands[2]
     assert create_command[create_command.index("--from") + 1] == "registry.example.com/team/agent:1"
+    assert read_victim_image(tmp_path, "sb") == "registry.example.com/team/agent:1"
+
+
+def test_lifecycle_replaces_a_sandbox_created_from_another_image(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("agent_hardener.openshell.support.time.sleep", lambda _seconds: None)
+    write_victim_image(tmp_path, "sb", "registry.example.com/team/agent:1")
+    runner = SequenceRunner(
+        [
+            (0, "gateway ok"),
+            (0, "Phase: Ready"),
+            (0, "deletion accepted"),
+            (1, "sandbox not found: NotFound"),
+            (0, "sandbox created"),
+            (0, "Phase: Ready"),
+        ]
+    )
+    lifecycle = _image_lifecycle(tmp_path, runner, image="registry.example.com/team/agent:2")
+
+    assert lifecycle.up().ok is True
+
+    verbs = [cmd[2] for cmd in runner.commands if cmd[1] == "sandbox"]
+    assert verbs[:2] == ["get", "delete"]
+    assert verbs.count("create") == 1
+    assert read_victim_image(tmp_path, "sb") == "registry.example.com/team/agent:2"
+
+
+def test_lifecycle_keeps_a_sandbox_created_from_the_same_image(tmp_path: Path) -> None:
+    write_victim_image(tmp_path, "sb", "registry.example.com/team/agent:1")
+    runner = SequenceRunner([(0, "gateway ok"), (0, "Phase: Ready")])
+    lifecycle = _image_lifecycle(tmp_path, runner, image="registry.example.com/team/agent:1")
+
+    assert lifecycle.up().ok is True
+    assert not any(cmd[2] in {"delete", "create"} for cmd in runner.commands)
+
+
+def test_a_local_build_forgets_the_recorded_image(tmp_path: Path) -> None:
+    write_victim_image(tmp_path, "sb", "registry.example.com/team/agent:1")
+    runner = SequenceRunner(
+        [(0, "gateway ok"), (1, "sandbox missing"), (0, "built"), (0, "sandbox created"), (0, "Phase: Ready")]
+    )
+    (tmp_path / "Dockerfile").write_text("FROM scratch\n", encoding="utf-8")
+    lifecycle = OpenShellLifecycle(
+        OpenShellConfig(
+            gateway="gw",
+            sandbox="sb",
+            policy_path=tmp_path / "policy.yaml",
+            build_context=tmp_path / "Dockerfile",
+            cwd=tmp_path,
+        ),
+        runner=runner,
+    )
+
+    assert lifecycle.up().ok is True
+    assert read_victim_image(tmp_path, "sb") is None
 
 
 def test_lifecycle_build_failure_stops_before_sandbox_create(tmp_path: Path) -> None:
