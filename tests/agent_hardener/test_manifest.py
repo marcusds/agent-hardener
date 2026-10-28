@@ -125,6 +125,15 @@ def test_expand_builds_relay_victim_and_backends() -> None:
     assert osc.relay_victim.backends[0].allowlist[0].port == 8086
 
 
+def test_expand_points_a_backend_at_a_non_host_address() -> None:
+    backend = {"name": "finance", "ports": [8086], "host": "finance.ns.svc", "allowed_ips": ["10.96.0.0/12"]}
+    config = expand(AgentManifest.model_validate({**AGENT, "backends": [backend]}), base_dir=REPO_ROOT)
+    relay_victim = openshell_config(config.victim_control).relay_victim
+    assert relay_victim is not None
+    (endpoint,) = relay_victim.backends[0].allowlist
+    assert (endpoint.host, endpoint.port, endpoint.allowed_ips) == ("finance.ns.svc", 8086, ["10.96.0.0/12"])
+
+
 def test_expand_carries_the_users_image_and_binaries() -> None:
     raw = {
         "agent": {

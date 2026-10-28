@@ -37,13 +37,20 @@ logger = logging.getLogger(__name__)
 
 
 class BackendManifest(AgentHardenerModel):
-    """A host-side backend the agent's tools call, in user-facing manifest form."""
+    """A backend the agent's tools call, in user-facing manifest form.
+
+    By default it runs on the host and the sandbox reaches it via ``host.docker.internal``. Set ``host``
+    to reach one running elsewhere, such as a Kubernetes service.
+    """
 
     name: str = Field(min_length=1)
-    compose_file: str | None = None  # omit for an already-running host service (Agent Hardener only opens the route)
+    compose_file: str | None = None  # omit for an already-running service (Agent Hardener only opens the route)
     compose_project: str | None = None
     health_url: str | None = None
     ports: list[int] = Field(default_factory=list)
+    host: str | None = None
+    # OpenShell blocks private addresses (e.g. a cluster service IP) unless they are listed here.
+    allowed_ips: list[str] = Field(default_factory=list)
 
 
 class AgentSpec(AgentHardenerModel):
@@ -93,6 +100,15 @@ def load_manifest(path: str | Path) -> AgentManifest:
     return AgentManifest.model_validate(data)
 
 
+def _backend_endpoint(backend: BackendManifest, port: int) -> dict[str, Any]:
+    endpoint: dict[str, Any] = {"port": port}
+    if backend.host:
+        endpoint["host"] = backend.host
+    if backend.allowed_ips:
+        endpoint["allowed_ips"] = backend.allowed_ips
+    return endpoint
+
+
 def _relay_victim_block(agent: AgentSpec, backends: list[BackendManifest]) -> dict[str, Any]:
     backend_specs = [
         {
@@ -100,7 +116,7 @@ def _relay_victim_block(agent: AgentSpec, backends: list[BackendManifest]) -> di
             "compose_file": backend.compose_file,
             "compose_project": backend.compose_project,
             "health_url": backend.health_url,
-            "allowlist": [{"port": port} for port in backend.ports],
+            "allowlist": [_backend_endpoint(backend, port) for port in backend.ports],
         }
         for backend in backends
     ]
