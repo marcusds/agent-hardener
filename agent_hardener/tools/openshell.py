@@ -129,6 +129,17 @@ def openshell_config(config: VictimControlConfig) -> OpenShellConfig:
     return OpenShellConfig.from_mapping(config.config)
 
 
+def with_victim_image(config: VictimControlConfig, image: str | None) -> VictimControlConfig:
+    """Point the sandbox at a pre-built victim image instead of building the staged context locally.
+
+    The image must be built from the context ``agent-hardener stage`` writes: staging injects the Relay
+    shim, the guardrail plugin and the agent env, and the launch command still assumes them.
+    """
+    if image is None:
+        return config
+    return config.model_copy(update={"config": {**config.config, "image": image}})
+
+
 def sandbox_is_ready(config: OpenShellConfig) -> bool:
     """Return True when the configured sandbox already exists and is ``Ready``.
 

@@ -12,7 +12,7 @@ import click
 import typer
 from typer.core import TyperCommand
 
-from agent_hardener.cli._app import DEFAULT_ENV_FILE, DEFAULT_MANIFEST, app
+from agent_hardener.cli._app import DEFAULT_ENV_FILE, DEFAULT_MANIFEST, VICTIM_IMAGE_HELP, app
 from agent_hardener.display.console import fail, info, ok
 
 if TYPE_CHECKING:
@@ -147,6 +147,7 @@ def run(
         help="Initial OpenShell policy YAML to run from, overriding the default permissive policy. Backend "
         "and discovered-egress rules are still layered on top; defenders still harden it further.",
     ),
+    victim_image: str | None = typer.Option(None, "--victim-image", help=VICTIM_IMAGE_HELP),
 ) -> None:
     """Run the full attack/defend/validate cycle against the configured agent.
 
@@ -163,6 +164,7 @@ def run(
         load_local_env,
         openshell_config,
         sandbox_is_ready,
+        with_victim_image,
     )
 
     # One boundary over the whole command: any classified failure (bad manifest, sandbox down, victim
@@ -176,6 +178,11 @@ def run(
         session_config = load_config(str(config), relay_plugins=relay_plugins, policy=policy)
         session_config = _resolve_replay(replay, session_config)
         session_config = _apply_benign_suite(benign_suite, session_config)
+        if victim_image is not None:
+            info(f"Using pre-built victim image: {victim_image}")
+            session_config = session_config.model_copy(
+                update={"victim_control": with_victim_image(session_config.victim_control, victim_image)}
+            )
 
         # --reuse resolves to the skip_initial_up primitive: skip the rebuild only if a Ready sandbox
         # is already running, otherwise build fresh.

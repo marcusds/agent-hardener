@@ -11,12 +11,12 @@ from typing import TYPE_CHECKING, Any, ClassVar, cast
 
 import pytest
 
+from agent_hardener.models import VictimControlConfig
 from agent_hardener.openshell.lifecycle import OpenShellCommandResult
 from agent_hardener.relay_plugin.victim import SANDBOX_ARTIFACTS_DIR
 from agent_hardener.tools import openshell as tool
 
 if TYPE_CHECKING:
-    from agent_hardener.models import VictimControlConfig
     from agent_hardener.openshell.lifecycle import OpenShellConfig
 
 pytestmark = pytest.mark.unit
@@ -426,3 +426,14 @@ def test_the_sandbox_is_torn_down_even_when_verification_or_the_body_fails(
         raise RuntimeError("body failed")
 
     assert sandbox.events[-1] == "down:base"
+
+
+def test_with_victim_image_sets_image_and_keeps_other_keys() -> None:
+    victim_control = VictimControlConfig(type="openshell", config={"sandbox": "sb"})
+
+    assert tool.with_victim_image(victim_control, None) is victim_control
+    assert tool.with_victim_image(victim_control, "registry.example.com/agent:1").config == {
+        "sandbox": "sb",
+        "image": "registry.example.com/agent:1",
+    }
+    assert victim_control.config == {"sandbox": "sb"}

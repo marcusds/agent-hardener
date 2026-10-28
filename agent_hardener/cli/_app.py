@@ -29,3 +29,7 @@ app = typer.Typer(
 
 DEFAULT_MANIFEST = Path("agent-hardener.yaml")
 DEFAULT_ENV_FILE = Path(".env")
+VICTIM_IMAGE_HELP = (
+    "Pre-built victim image to run instead of building locally with docker. Build it from the context "
+    "`agent-hardener stage` writes."
+)

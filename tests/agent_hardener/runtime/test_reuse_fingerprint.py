@@ -19,8 +19,10 @@ def _session(workflow: Path | None) -> SimpleNamespace:
     return SimpleNamespace(target=SimpleNamespace(agent_relay_plugins=workflow))
 
 
-def _openshell(sandbox: str = "agent-hardener-finance", start: str = "/app/start.sh") -> SimpleNamespace:
-    return SimpleNamespace(sandbox=sandbox, start_command=start, build_context=None)
+def _openshell(
+    sandbox: str = "agent-hardener-finance", start: str = "/app/start.sh", image: str | None = None
+) -> SimpleNamespace:
+    return SimpleNamespace(sandbox=sandbox, start_command=start, build_context=None, image=image)
 
 
 def test_fingerprint_is_deterministic(tmp_path: Path) -> None:
@@ -48,6 +50,16 @@ def test_fingerprint_changes_with_start_command(tmp_path: Path) -> None:
     assert runner._agent_fingerprint(_session(wf), _openshell(start="/app/a.sh")) != runner._agent_fingerprint(
         _session(wf), _openshell(start="/app/b.sh")
     )
+
+
+def test_fingerprint_changes_with_victim_image(tmp_path: Path) -> None:
+    wf = tmp_path / "workflow.yaml"
+    wf.write_text("agent: finance\n", encoding="utf-8")
+    fingerprints = {
+        runner._agent_fingerprint(_session(wf), _openshell(image=image))
+        for image in (None, "registry.example.com/agent:1", "registry.example.com/agent:2")
+    }
+    assert len(fingerprints) == 3
 
 
 def test_fingerprint_sidecar_roundtrip_and_mismatch(tmp_path: Path) -> None:

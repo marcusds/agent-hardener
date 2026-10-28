@@ -103,7 +103,7 @@ class OpenShellLifecycle(PollingMixin, VictimMixin, ForwardMixin):
 
         sandbox_status = self.status()
         results.append(sandbox_status)
-        if self.config.build_context is None:
+        if self.config.build_context is None and self.config.image is None:
             return combine_results(results, ok=results[-1].ok)
 
         if not sandbox_status.ok:
@@ -151,9 +151,12 @@ class OpenShellLifecycle(PollingMixin, VictimMixin, ForwardMixin):
     def _build_image(self) -> OpenShellCommandResult:
         """Build the staged Dockerfile into a local image; ``output`` carries the image reference.
 
-        ``sandbox create --from`` takes an image reference only, built with the gateway's container engine. A ``build_context`` that is
-        not a local path is taken to already be an image reference and passed through untouched.
+        ``sandbox create --from`` takes an image reference only, built with the gateway's container engine. A
+        configured ``image`` is used as-is with no local build, for hosts without Docker that build the staged
+        context elsewhere. A ``build_context`` that is not a local path is likewise passed through untouched.
         """
+        if self.config.image:
+            return OpenShellCommandResult(ok=True, command=[], output=self.config.image)
         context = self.config.build_context
         assert context is not None  # guarded by up()
         if not context.exists():

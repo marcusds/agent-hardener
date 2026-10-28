@@ -62,7 +62,7 @@ def _run_log_path(root_dir: Path) -> Path:
 
 
 def _base_config(relay_victim: object = None) -> SimpleNamespace:
-    # Includes the fields the loop-1 agent fingerprint reads (sandbox/start_command/build_context).
+    # Includes the fields the loop-1 agent fingerprint reads (sandbox/start_command/build_context/image).
     return SimpleNamespace(
         relay_victim=relay_victim,
         cwd=None,
@@ -70,6 +70,7 @@ def _base_config(relay_victim: object = None) -> SimpleNamespace:
         sandbox="agent-hardener-test",
         start_command="run",
         build_context=None,
+        image=None,
         policy_path=None,  # real OpenShellConfig always has one; None here skips the initial-state seed
     )
 

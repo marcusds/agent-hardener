@@ -138,6 +138,7 @@ def build_mission(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BuildMissi
             sandbox="sb",
             start_command=start_command,
             build_context=build_context,
+            image=None,
             policy_path=policy_path,
         )
         session = SimpleNamespace(

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import typer
 
-from agent_hardener.cli._app import DEFAULT_ENV_FILE, DEFAULT_MANIFEST, app
+from agent_hardener.cli._app import DEFAULT_ENV_FILE, DEFAULT_MANIFEST, VICTIM_IMAGE_HELP, app
 from agent_hardener.display.console import fail, info, section, status_factory
 from agent_hardener.display.interview import auto_answer_provider, tty_answer_provider
 
@@ -37,6 +37,7 @@ def synth_benign(
         False, "--reuse", help="Reuse the running sandbox if it's already Ready (skip rebuild)."
     ),
     no_cleanup: bool = typer.Option(False, "--no-cleanup", help="Leave the sandbox running after synthesis."),
+    victim_image: str | None = typer.Option(None, "--victim-image", help=VICTIM_IMAGE_HELP),
 ) -> None:
     """Bring up the victim sandbox, synthesize the smart benign profile + request suite, then tear it down.
 
@@ -52,7 +53,12 @@ def synth_benign(
     from agent_hardener.cli._errors import cli_error_boundary
     from agent_hardener.config import load_config
     from agent_hardener.model_check import preflight_configured_models
-    from agent_hardener.tools.openshell import configure_local_docker_host, load_local_env, managed_victim_sandbox
+    from agent_hardener.tools.openshell import (
+        configure_local_docker_host,
+        load_local_env,
+        managed_victim_sandbox,
+        with_victim_image,
+    )
 
     if yes and no_interactive:
         fail("--yes and --no-interactive are mutually exclusive")
@@ -65,7 +71,7 @@ def synth_benign(
         # Synth uses the analysis LLM; fail fast on a missing credential before the (slow) sandbox build.
         preflight_configured_models()
         session = load_config(str(config))
-        victim_control = session.victim_control
+        victim_control = with_victim_image(session.victim_control, victim_image)
         answer_provider = auto_answer_provider if yes else tty_answer_provider
         # The sandbox build (docker) can take minutes; show a spinner so the command isn't silent.
         with ExitStack() as sandbox:

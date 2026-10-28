@@ -55,6 +55,7 @@ class OpenShellConfig:
     policy_path: Path
     openshell_bin: str = "openshell"
     build_context: Path | None = None
+    image: str | None = None
     provider: str | None = None
     provider_type: str = "generic"
     provider_env_file: Path | None = None
@@ -90,6 +91,7 @@ class OpenShellConfig:
             policy_path=policy_path,
             openshell_bin=str(data.get("openshell_bin", "openshell")),
             build_context=build_context,
+            image=str(data["image"]) if data.get("image") else None,
             provider=str(data["provider"]) if data.get("provider") else None,
             provider_type=str(data.get("provider_type", "generic")),
             provider_env_file=Path(str(data["provider_env_file"])) if data.get("provider_env_file") else None,

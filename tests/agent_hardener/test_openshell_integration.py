@@ -521,6 +521,28 @@ def test_lifecycle_passes_an_image_reference_build_context_through(tmp_path: Pat
     assert lifecycle._build_image().output == "registry.example.com/team/agent:1"
 
 
+def test_lifecycle_creates_from_victim_image_without_a_local_build(tmp_path: Path) -> None:
+    runner = SequenceRunner([(0, "gateway ok"), (1, "sandbox missing"), (0, "sandbox created"), (0, "Phase: Ready")])
+    lifecycle = OpenShellLifecycle(
+        OpenShellConfig.from_mapping(
+            {
+                "gateway": "gw",
+                "sandbox": "sb",
+                "policy_path": str(tmp_path / "policy.yaml"),
+                "build_context": str(tmp_path / "Dockerfile"),
+                "image": "registry.example.com/team/agent:1",
+            }
+        ),
+        runner=runner,
+    )
+
+    assert lifecycle.up().ok is True
+
+    assert not any(cmd[0] == "docker" for cmd in runner.commands)
+    create_command = runner.commands[2]
+    assert create_command[create_command.index("--from") + 1] == "registry.example.com/team/agent:1"
+
+
 def test_lifecycle_build_failure_stops_before_sandbox_create(tmp_path: Path) -> None:
     runner = SequenceRunner([(0, "gateway ok"), (1, "sandbox missing"), (1, "build failed")])
     lifecycle = OpenShellLifecycle(

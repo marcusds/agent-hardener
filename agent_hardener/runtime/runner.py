@@ -116,11 +116,14 @@ def _agent_fingerprint(session_config: SessionConfig, openshell_config: OpenShel
     """Deterministic identity of the agent a sandbox should be running.
 
     Combines the victim's workflow config contents with the sandbox name, start
-    command, and build context. Recorded when we build a sandbox and re-checked
+    command, build context, and pre-built image. Recorded when we build a sandbox and re-checked
     on ``--reuse`` so a different agent under the same sandbox name is detected.
     """
     h = hashlib.sha256()
-    for part in (openshell_config.sandbox, openshell_config.start_command, str(openshell_config.build_context or "")):
+    parts = [openshell_config.sandbox, openshell_config.start_command, str(openshell_config.build_context or "")]
+    if openshell_config.image:
+        parts.append(openshell_config.image)
+    for part in parts:
         h.update((part or "").encode("utf-8"))
         h.update(b"\x00")
     workflow = session_config.target.agent_relay_plugins

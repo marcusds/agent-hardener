@@ -17,7 +17,7 @@ from agent_hardener.cli import app
 from agent_hardener.config import load_config
 from agent_hardener.display.interview import auto_answer_provider, tty_answer_provider
 from agent_hardener.manifest import build_backend, build_manifest, render_manifest_yaml
-from agent_hardener.models import SessionConfig
+from agent_hardener.models import SessionConfig, VictimControlConfig
 from agent_hardener.openshell.lifecycle import OpenShellCommandResult
 from agent_hardener.project import (
     append_env,
@@ -97,6 +97,19 @@ def test_run_replay_resolves_latest_hitlog_from_run_logs(tmp_path: Path, monkeyp
     (config,) = captured
     assert config.attackers == []
     assert [attack.path for attack in config.preloaded_attacks] == [hitlog.resolve()]
+
+
+def test_run_victim_image_reaches_the_sandbox_config(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    session_config = _replay_session_config(tmp_path).model_copy(
+        update={"victim_control": VictimControlConfig(type="openshell", config={"sandbox": "sb"})}
+    )
+    captured = _patch_run_command(monkeypatch, session_config)
+
+    result = runner.invoke(app, ["run", "--victim-image", "registry.example.com/agent:1"])
+
+    assert result.exit_code == 0
+    (config,) = captured
+    assert config.victim_control.config == {"sandbox": "sb", "image": "registry.example.com/agent:1"}
 
 
 def test_run_replay_fails_without_hitlog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1033,6 +1046,20 @@ def test_up_command(monkeypatch: pytest.MonkeyPatch) -> None:
     result = runner.invoke(app, ["up", "--config", "x.yaml"])
     assert result.exit_code == 0
     assert "brought-up" in result.output
+
+
+def test_stage_prints_the_staged_build_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_common(monkeypatch, base_config=SimpleNamespace(relay_victim="spec", build_context=tmp_path / "Dockerfile"))
+    result = runner.invoke(app, ["stage", "--config", "x.yaml"])
+    assert result.exit_code == 0
+    assert result.output.strip() == str(tmp_path)
+
+
+def test_stage_fails_without_a_victim_build(monkeypatch: pytest.MonkeyPatch) -> None:
+    _patch_common(monkeypatch, base_config=SimpleNamespace(relay_victim=None, build_context=None))
+    result = runner.invoke(app, ["stage", "--config", "x.yaml"])
+    assert result.exit_code == 1
+    assert "no victim build to stage" in result.output
 
 
 def _patch_synth(monkeypatch: pytest.MonkeyPatch, events: list[str], *, up_ok: bool = True) -> None:
