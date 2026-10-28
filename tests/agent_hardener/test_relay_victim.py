@@ -123,6 +123,19 @@ def test_stage_copies_project_dockerfile_and_injects_shim(tmp_path: Path) -> Non
     assert 'kw.setdefault("trust_env", True)' in shim
 
 
+def test_stage_leaves_dotenv_secrets_out_of_the_build_context(tmp_path: Path) -> None:
+    project = _make_project(tmp_path)
+    (project / ".env").write_text("INFERENCE_API_KEY=secret\n", encoding="utf-8")
+    (project / ".env.local").write_text("GITHUB_TOKEN=secret\n", encoding="utf-8")
+    spec = RelayVictimSpec(project_dir=project, dockerfile="Dockerfile.byo", victim_binaries=["/app/.venv/bin/**"])
+    build = tmp_path / "build"
+    stage_relay_victim_build(spec, tmp_path, build)
+
+    assert not (build / ".env").exists()
+    assert not (build / ".env.local").exists()
+    assert ".env\n" in (build / ".dockerignore").read_text(encoding="utf-8")
+
+
 def test_stage_ships_the_guardrail_plugin_into_the_image(tmp_path: Path) -> None:
     """The guardrail runs in the victim's process, so its code has to be in the victim's image.
 

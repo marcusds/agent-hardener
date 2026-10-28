@@ -33,7 +33,9 @@ if TYPE_CHECKING:
     from agent_hardener.models import RelayVictimSpec
 
 # Excluded when copying the project into the staged build context (avoids huge/irrelevant trees).
-_COPY_IGNORE = shutil.ignore_patterns(".git", ".venv", "__pycache__", "*.pyc", ".agent-hardener")
+# Dotenv files hold the agent's secrets, which reach the sandbox via the OpenShell provider instead; the
+# staged context may be uploaded and built elsewhere (see ``agent-hardener stage``).
+_COPY_IGNORE = shutil.ignore_patterns(".git", ".venv", "__pycache__", "*.pyc", ".agent-hardener", ".env", ".env.*")
 
 # System-policy layer Relay discovers plugin config from. Agent Hardener uploads the guardrails the
 # defenders produce here; the user/project layers are deliberately not used, because NeMo Fabric
@@ -256,5 +258,5 @@ def stage_relay_victim_build(spec: RelayVictimSpec, cwd: Path, build_root: Path)
     if spec.harness == "hermes":
         _inject_hermes_wiring(staged_dockerfile)
 
-    (build_root / ".dockerignore").write_text(".git\n.venv\n__pycache__\n*.pyc\n", encoding="utf-8")
+    (build_root / ".dockerignore").write_text(".git\n.venv\n__pycache__\n*.pyc\n.env\n.env.*\n", encoding="utf-8")
     return staged_dockerfile
