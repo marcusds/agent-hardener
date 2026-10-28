@@ -236,3 +236,36 @@ def test_the_relay_probe_hits_the_victim_and_syncs_the_atof_log_from_the_sandbox
     assert "Checking Relay instrumentation" in harness.statuses
     assert "relay instrumentation confirmed (4 event(s))" in harness.lines
     assert any("dirty scope stack" in line for line in harness.lines) is quarantined
+
+
+def test_reuse_adopts_the_pre_built_image_the_sandbox_was_created_from(build_mission: BuildMission) -> None:
+    build_mission(image="reg/agent:1", no_cleanup=True).run()
+    reused = build_mission(skip_initial_up=True, no_cleanup=True)
+
+    reused.run()
+
+    assert reused.lifecycle.calls == []
+    assert reused.lifecycle.config.image == "reg/agent:1"
+    assert "reusing the pre-built victim image recorded for this sandbox: reg/agent:1" in reused.lines
+    assert _REUSING in reused.lines
+
+
+def test_an_explicit_image_wins_over_the_recorded_one(build_mission: BuildMission) -> None:
+    build_mission(image="reg/agent:1", no_cleanup=True).run()
+    rebuilt = build_mission(image="reg/agent:2", skip_initial_up=True, no_cleanup=True)
+
+    rebuilt.run()
+
+    assert rebuilt.lifecycle.calls == ["down", "up"]
+    assert rebuilt.lifecycle.config.image == "reg/agent:2"
+
+
+def test_a_local_build_forgets_the_recorded_image(build_mission: BuildMission) -> None:
+    build_mission(image="reg/agent:1", no_cleanup=True).run()
+    build_mission(start_command="run-new", no_cleanup=True).run()
+    reused = build_mission(start_command="run-new", skip_initial_up=True, no_cleanup=True)
+
+    reused.run()
+
+    assert reused.lifecycle.config.image is None
+    assert _REUSING in reused.lines

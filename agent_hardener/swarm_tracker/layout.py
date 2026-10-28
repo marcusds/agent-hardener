@@ -139,6 +139,11 @@ def agent_fingerprint_path(cwd: Path, sandbox: str) -> Path:
     return cwd / _AGENT_HARDENER / _BUILDS / sandbox / "agent_fingerprint.txt"
 
 
+def victim_image_path(cwd: Path, sandbox: str) -> Path:
+    """Sidecar recording the pre-built image ``sandbox`` was last created from (GLOBAL scope; not created here)."""
+    return cwd / _AGENT_HARDENER / _BUILDS / sandbox / "victim_image.txt"
+
+
 def benign_profiles_dir(root_dir: Path, target: str) -> Path:
     """The per-target synth cache dir ``<root_dir>/benign_profiles/<target>`` (not created here)."""
     return root_dir / _BENIGN_PROFILES / target

@@ -145,7 +145,27 @@ def test_bundle_ships_the_guardrails_and_the_hardened_policy(
     assert call["destination"] == harness.run_dir / "hardened-image"
     assert (call["agent"], call["run_id"]) == ("agent", "run-1")
     assert call["policy"] == (active_state / policy_name if policy_name else None)
+    assert call["image"] is None
     assert f"  → hardened image bundle: {harness.run_dir / 'hardened-image'}" in harness.lines
+
+
+@pytest.mark.usefixtures("relay_probe")
+def test_bundle_names_the_pre_built_image_the_run_validated(
+    build_mission: BuildMission, written_bundles: list[dict[str, Any]], tmp_path: Path
+) -> None:
+    harness = build_mission(
+        atof_path=tmp_path / "events.atof.jsonl",
+        build_context=tmp_path / "image" / "Dockerfile",
+        image="reg/agent:1",
+        no_cleanup=True,
+    )
+    _deploy_guardrails(harness)
+
+    harness.run()
+
+    (call,) = written_bundles
+    assert call["image"] == "reg/agent:1"
+    assert call["build_root"] == tmp_path / "image"
 
 
 @pytest.mark.usefixtures("relay_probe")

@@ -112,6 +112,12 @@ sandbox, policy, the attacker/defender/validator suite — is defaulted (overrid
 block or a full session config). Useful commands: `uv run agent-hardener run --rounds N`, `--no-cleanup`,
 `uv run agent-hardener synth-benign` (generate/refresh the benign suite), `uv run agent-hardener up|down|status`.
 
+On a host without Docker, `uv run agent-hardener stage` writes the victim's build context and prints its
+directory. Build and push that directory with any image builder, then pass the result to
+`run --victim-image <ref>` (also accepted by `up` and `synth-benign`). The image must come from the `stage`
+output of the same manifest and agent-hardener version you run with: `run` re-stages the context to derive
+the sandbox policy and launch environment, and nothing checks that the image still matches it.
+
 Garak's agent_breaker probe is run from a `garak-scan.yaml` config that `init` scaffolds and
 `run` regenerates with the resolved victim endpoint. To tune it (models, victim port, attempts), add a
 `garak:` block to the manifest or edit the scaffold — see [Garak agent_breaker](#garak-agent_breaker).
@@ -445,7 +451,8 @@ Useful run controls:
 ```text
 --rounds N         Carry generated policy/workflow forward across N hardening rounds.
 --replay           Skip live attackers; replay hits from the latest run instead.
---reuse            Skip sandbox rebuild if it is already running.
+--reuse            Skip sandbox rebuild if it is already running; a --victim-image sandbox is reused as-is.
+--victim-image     Create the sandbox from a pre-built image (see `agent-hardener stage`) instead of docker build.
 --no-cleanup       Leave sandbox running after the run.
 --verbose          Show raw output and full report detail.
 ```

@@ -23,6 +23,7 @@ from agent_hardener.swarm_tracker.layout import (
     snapshot_victim_state,
     update_victim_active_state,
     victim_active_state_dir,
+    victim_image_path,
     write_init_files,
 )
 from agent_hardener.swarm_tracker.writers import write_component_output, write_run_config
@@ -43,6 +44,7 @@ __all__ = [
     "snapshot_victim_state",
     "update_victim_active_state",
     "victim_active_state_dir",
+    "victim_image_path",
     "write_component_output",
     "write_init_files",
     "write_run_config",

@@ -23,6 +23,20 @@ def command_result(output: str = "", *, ok: bool = True) -> OpenShellCommandResu
     return OpenShellCommandResult(ok=ok, command=[], output=output)
 
 
+@dataclass(frozen=True)
+class FakeOpenShellConfig:
+    """The ``OpenShellConfig`` fields the mission reads; a dataclass so ``replace`` works as in production."""
+
+    relay_victim: Any
+    cwd: Path
+    sandbox: str
+    start_command: str
+    build_context: Path | None
+    image: str | None
+    policy_path: Path | None
+    health_timeout: float = 5.0
+
+
 class FakeLifecycle:
     """Stands in for ``OpenShellLifecycle``; records what the mission asks of the sandbox."""
 
@@ -119,6 +133,7 @@ def build_mission(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BuildMissi
         atof_path: Path | None = None,
         backends: tuple[str, ...] = (),
         build_context: Path | None = None,
+        image: str | None = None,
         start_command: str = "run",
         policy_path: Path | None = None,
         skip_initial_up: bool = False,
@@ -131,14 +146,13 @@ def build_mission(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> BuildMissi
             if atof_path or backends
             else None
         )
-        base_config = SimpleNamespace(
+        base_config = FakeOpenShellConfig(
             relay_victim=relay_victim,
             cwd=tmp_path,
-            health_timeout=5.0,
             sandbox="sb",
             start_command=start_command,
             build_context=build_context,
-            image=None,
+            image=image,
             policy_path=policy_path,
         )
         session = SimpleNamespace(

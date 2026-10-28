@@ -39,11 +39,21 @@ _DOCKERFILE_SUFFIX = """
 COPY plugins.toml {destination}
 """
 
+_STAGED_SOURCE = """\
+Built from your own image plus the guardrails the war-game produced. Nothing here was invented: the
+Dockerfile is yours with two lines appended, and `plugins.toml` is the config the run validated.
+"""
+
+_PREBUILT_SOURCE = """\
+Built from `{image}`, the pre-built image this run validated, plus the guardrails the war-game
+produced. The Dockerfile only layers `plugins.toml` onto that image, so the result is exactly what
+was tested. The image still carries the OpenShell proxy shim it was staged with.
+"""
+
 _README = """\
 # Hardened image — {agent}
 
-Built from your own image plus the guardrails the war-game produced. Nothing here was invented: the
-Dockerfile is yours with two lines appended, and `plugins.toml` is the config the run validated.
+{source}
 
 ```bash
 docker build -t {agent}-hardened:{run_id} .
@@ -96,18 +106,20 @@ start this agent unguarded, and nothing will say so. If yours does that, export
 
 def write_hardened_bundle(
     *,
-    build_root: Path,
+    build_root: Path | None,
     plugins_toml: Path,
     destination: Path,
     agent: str,
     run_id: str,
     policy: Path | None = None,
+    image: str | None = None,
 ) -> Path:
     """Assemble the deployable bundle and return its directory.
 
     Args:
         build_root: The run's staged build context — the user's project plus the appended Dockerfile
-            and ``openshell-shims/``.
+            and ``openshell-shims/``. Ignored when ``image`` is given: that tree was re-staged for the
+            run's policy but never built, so shipping it would package something the run did not test.
         plugins_toml: The run's final guardrail config.
         destination: Directory to write (replaced if it exists).
         agent: Agent name, for the image tag in the README.
@@ -115,23 +127,34 @@ def write_hardened_bundle(
         policy: The run's final OpenShell sandbox policy, when there is one. Shipped beside the
             image because a war-game hardens two things, not one — the guardrails *and* the policy —
             and handing back only the half that fits in the image would understate the result.
+        image: The pre-built image the run validated (``--victim-image``), when there was one. The
+            bundle's Dockerfile then starts ``FROM`` it instead of rebuilding the staged context.
 
     Returns:
         The bundle directory.
     """
     if destination.exists():
         shutil.rmtree(destination)
-    shutil.copytree(build_root, destination, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    if image is None:
+        if build_root is None:
+            raise ValueError("a hardened bundle needs a staged build context or a pre-built image")
+        shutil.copytree(build_root, destination, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        _strip_sandbox_shim(destination / "openshell-shims" / "sitecustomize.py")
+        source = _STAGED_SOURCE
+    else:
+        destination.mkdir(parents=True)
+        (destination / "Dockerfile").write_text(f"FROM {image}\n", encoding="utf-8")
+        source = _PREBUILT_SOURCE.format(image=image)
     shutil.copyfile(plugins_toml, destination / "plugins.toml")
 
     if policy is not None and policy.is_file():
         shutil.copyfile(policy, destination / "openshell-policy.yaml")
 
-    _strip_sandbox_shim(destination / "openshell-shims" / "sitecustomize.py")
     with (destination / "Dockerfile").open("a", encoding="utf-8") as dockerfile:
         dockerfile.write(_DOCKERFILE_SUFFIX.format(destination=BUNDLE_PLUGINS_DEST))
     (destination / "README.md").write_text(
-        _README.format(agent=agent, run_id=run_id, destination=BUNDLE_PLUGINS_DEST), encoding="utf-8"
+        _README.format(agent=agent, run_id=run_id, destination=BUNDLE_PLUGINS_DEST, source=source),
+        encoding="utf-8",
     )
     return destination
 

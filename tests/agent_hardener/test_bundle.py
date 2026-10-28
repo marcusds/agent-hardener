@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import pytest
+
 from agent_hardener.bundle import BUNDLE_PLUGINS_DEST, write_hardened_bundle
 
 if TYPE_CHECKING:
@@ -42,7 +44,7 @@ def _build_root(tmp_path: Path) -> Path:
     return root
 
 
-def _bundle(tmp_path: Path) -> Path:
+def _bundle(tmp_path: Path, image: str | None = None) -> Path:
     plugins = tmp_path / "plugins.toml"
     plugins.write_text('version = 1\n[[components]]\nkind = "agent_hardener.pre_tool_verifier"\n', encoding="utf-8")
     policy = tmp_path / "openshell-policy.yaml"
@@ -54,6 +56,7 @@ def _bundle(tmp_path: Path) -> Path:
         agent="ledger",
         run_id="20260830T120000Z-abc",
         policy=policy,
+        image=image,
     )
 
 
@@ -97,3 +100,25 @@ def test_the_sandbox_policy_ships_beside_the_image(tmp_path: Path) -> None:
     assert "filesystem_policy" in (bundle / "openshell-policy.yaml").read_text()
     # ...and the README has to say docker will not apply it.
     assert "not** applied by `docker run`" in (bundle / "README.md").read_text()
+
+
+def test_a_pre_built_image_is_layered_not_rebuilt(tmp_path: Path) -> None:
+    """The staged tree was never built when --victim-image ran; shipping it would package an untested image."""
+    bundle = _bundle(tmp_path, image="registry.example.com/ledger:1")
+
+    assert (bundle / "Dockerfile").read_text().startswith("FROM registry.example.com/ledger:1\n")
+    assert f"COPY plugins.toml {BUNDLE_PLUGINS_DEST}" in (bundle / "Dockerfile").read_text()
+    assert not (bundle / "openshell-shims").exists()
+    assert "agent_hardener.pre_tool_verifier" in (bundle / "plugins.toml").read_text()
+    assert "filesystem_policy" in (bundle / "openshell-policy.yaml").read_text()
+    assert "Built from `registry.example.com/ledger:1`" in (bundle / "README.md").read_text()
+
+
+def test_a_bundle_needs_a_build_root_or_an_image(tmp_path: Path) -> None:
+    plugins = tmp_path / "plugins.toml"
+    plugins.write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="staged build context or a pre-built image"):
+        write_hardened_bundle(
+            build_root=None, plugins_toml=plugins, destination=tmp_path / "out", agent="ledger", run_id="r"
+        )
